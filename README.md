@@ -3,6 +3,8 @@
 [![Project Page](https://img.shields.io/badge/Project-Page-green)](https://apple.github.io/ml-sharp/)
 [![arXiv](https://img.shields.io/badge/arXiv-2512.10685-b31b1b.svg)](https://arxiv.org/abs/2512.10685)
 
+> **Forked from:** [apple-aiml-research/ml-sharp](https://github.com/apple-aiml-research/ml-sharp) — extended with a local web viewer, Windows app packaging, and additional inference/server fixes.
+
 This software project accompanies the research paper: _Sharp Monocular View Synthesis in Less Than a Second_
 by _Lars Mescheder, Wei Dong, Shiwei Li, Xuyang Bai, Marcel Santos, Peiyun Hu, Bruno Lecouat, Mingmin Zhen, Amaël Delaunoy,
 Tian Fang, Yanghai Tsin, Stephan Richter and Vladlen Koltun_.
