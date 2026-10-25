@@ -13,29 +13,53 @@ We present SHARP, an approach to photorealistic view synthesis from a single ima
 
 ## Getting started
 
-We recommend to first create a python environment:
+We recommend creating a Python environment first:
 
-```
+```bash
 conda create -n sharp python=3.13
+conda activate sharp
 ```
 
-Afterwards, you can install the project using
+Install the package:
 
-```
-pip install -r requirements.txt
+```bash
+pip install -e .
 ```
 
-To test the installation, run
+For video trajectory rendering (requires a CUDA GPU), install the render extras:
 
+```bash
+pip install -e ".[render]"
 ```
+
+To test the installation:
+
+```bash
 sharp --help
 ```
+
+## Web Viewer
+
+This repository includes a local web app for uploading a single image and viewing the generated 3D Gaussian Splat in the browser.
+
+From the `ml-sharp/` directory:
+
+```bash
+uvicorn web.server:app --host 127.0.0.1 --port 8000
+```
+
+Open [http://127.0.0.1:8000](http://127.0.0.1:8000), upload an image, and wait for processing to complete. Results are rendered in-browser using Three.js and Gaussian Splats 3D.
+
+Notes:
+- Prediction works on CPU, CUDA, and MPS.
+- Video rendering is still CUDA-only and requires the `[render]` extras.
+- Job data is written to `web/jobs/` (transient; cleaned on server startup).
 
 ## Using the CLI
 
 To run prediction:
 
-```
+```bash
 sharp predict -i /path/to/input/images -o /path/to/output/gaussians
 ```
 
@@ -43,28 +67,52 @@ The model checkpoint will be downloaded automatically on first run and cached lo
 
 Alternatively, you can download the model directly:
 
-```
+```bash
 wget https://ml-site.cdn-apple.com/models/sharp/sharp_2572gikvuh.pt
 ```
 
 To use a manually downloaded checkpoint, specify it with the `-c` flag:
 
-```
+```bash
 sharp predict -i /path/to/input/images -o /path/to/output/gaussians -c sharp_2572gikvuh.pt
 ```
 
-The results will be 3D gaussian splats (3DGS) in the output folder. The 3DGS `.ply` files are compatible to various public 3DGS renderers. We follow the OpenCV coordinate convention (x right, y down, z forward). The 3DGS scene center is roughly at (0, 0, +z). When dealing with 3rdparty renderers, please scale and rotate to re-center the scene accordingly.
+The results will be 3D gaussian splats (3DGS) in the output folder. The 3DGS `.ply` files are compatible with various public 3DGS renderers. We follow the OpenCV coordinate convention (x right, y down, z forward). The 3DGS scene center is roughly at (0, 0, +z). When dealing with 3rdparty renderers, please scale and rotate to re-center the scene accordingly.
 
 ### Rendering trajectories (CUDA GPU only)
 
 Additionally you can render videos with a camera trajectory. While the gaussians prediction works for all CPU, CUDA, and MPS, rendering videos via the `--render` option currently requires a CUDA GPU. The gsplat renderer takes a while to initialize at the first launch.
 
-```
+```bash
 sharp predict -i /path/to/input/images -o /path/to/output/gaussians --render
 
 # Or from the intermediate gaussians:
 sharp render -i /path/to/output/gaussians -o /path/to/output/renderings
 ```
+
+## Windows App
+
+A self-contained Windows onedir build is available under `sharp-app/`. 
+
+To build it:
+
+```powershell
+.\sharp-app\build.ps1
+```
+
+The build will stage web assets, run PyInstaller, and copy the model checkpoint from `~/.cache/torch/hub/checkpoints/` to `sharp-app/dist/ml-sharp/model/`. After building, run `ml-sharp.exe` and open [http://127.0.0.1:8000](http://127.0.0.1:8000).
+
+## Development
+
+Run smoke tests from the repo root:
+
+```bash
+python tests/test_smoke.py
+```
+
+Notes:
+- `gsplat` and `imageio[ffmpeg]` are only required for rendering (`[render]` extra). The core inference path runs without them.
+- The web server imports the shared inference pipeline from `sharp.cli.predict` and is safe to run in environments without CUDA/gsplat.
 
 ## Evaluation
 
