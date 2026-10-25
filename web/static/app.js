@@ -173,8 +173,9 @@ function frameCamera(bounds) {
 
     controls.target.copy(center);
     camera.up.set(0, -1, 0);
-    // Place the camera in front of the subject (SHARP camera looks down +Z)
-    camera.position.set(center.x, center.y, center.z + radius * 1.6);
+    // SHARP/OpenCV: the source camera sits at -Z looking down +Z, so the
+    // photo-matching "front" view is from -Z.
+    camera.position.set(center.x, center.y, center.z - radius * 1.6);
     camera.near = Math.max(radius / 1000, 0.01);
     camera.far = radius * 100;
     camera.updateProjectionMatrix();
@@ -193,8 +194,9 @@ function computeBounds(arrayBuffer) {
 // SHARP scenes are authored y-down (world up = -Y), so "top/bottom" views swap
 // the camera's up vector to avoid gimbal lock with the -Y orbit axis.
 const CAMERA_PRESETS = {
-    front:  { dir: [0, 0, 1],  up: [0, -1, 0] },
-    back:   { dir: [0, 0, -1], up: [0, -1, 0] },
+    // -Z is "front": it matches the original photo (SHARP camera looks down +Z).
+    front:  { dir: [0, 0, -1], up: [0, -1, 0] },
+    back:   { dir: [0, 0, 1],  up: [0, -1, 0] },
     left:   { dir: [-1, 0, 0], up: [0, -1, 0] },
     right:  { dir: [1, 0, 0],  up: [0, -1, 0] },
     top:    { dir: [0, -1, 0], up: [0, 0, -1] },
@@ -243,8 +245,8 @@ function setCameraView(name) {
 function flyIn() {
     if (!activeBounds) return;
     const { center, radius } = activeBounds;
-    const start = new THREE.Vector3(center.x, center.y, center.z + radius * 5.0);
-    const end = new THREE.Vector3(center.x, center.y, center.z + radius * 1.6);
+    const start = new THREE.Vector3(center.x, center.y, center.z - radius * 5.0);
+    const end = new THREE.Vector3(center.x, center.y, center.z - radius * 1.6);
 
     camera.up.set(0, -1, 0);
     controls.target.copy(center);

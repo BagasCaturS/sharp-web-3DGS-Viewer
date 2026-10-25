@@ -59,6 +59,22 @@ from sharp.utils.gaussians import save_ply
 # ─── Configuration ────────────────────────────────────────────────────────────
 JOBS_DIR = APP_DIR / "jobs"
 JOBS_DIR.mkdir(exist_ok=True)
+MAX_UPLOAD_BYTES = 50 * 1024 * 1024
+
+
+def _save_limited(src, dest: Path, limit: int = MAX_UPLOAD_BYTES) -> None:
+    """Copy an upload stream to disk, rejecting anything over ``limit`` bytes."""
+    try:
+        total = 0
+        with dest.open("wb") as out:
+            while chunk := src.read(1024 * 1024):
+                total += len(chunk)
+                if total > limit:
+                    raise HTTPException(413, "File too large (max 50 MB)")
+                out.write(chunk)
+    except Exception:
+        dest.unlink(missing_ok=True)
+        raise
 
 # ─── Global State ─────────────────────────────────────────────────────────────
 jobs: dict[str, dict[str, Any]] = {}
@@ -265,63 +281,64 @@ def _log_profile(job_id: str) -> None:
 
 # ─── Prediction Logic ─────────────────────────────────────────────────────────
 def process_job(job_id: str, image_path: Path, output_dir: Path) -> None:
-    """Background job processing."""
+    """Background job processing (one inference at a time)."""
     with _job_sem:
         job = jobs.get(job_id)
         if not job:
             return
 
-    def update_progress(pct: int, msg: str) -> None:
-        job["progress"] = pct
-        job["status"] = msg
-        LOGGER.info("[%s] %d%% - %s", job_id, pct, msg)
+        def update_progress(pct: int, msg: str) -> None:
+            job["progress"] = pct
+            job["status"] = msg
+            LOGGER.info("[%s] %d%% - %s", job_id, pct, msg)
 
-    try:
-        job["status"] = "Loading image..."
-        job["progress"] = 5
+        try:
+            job["status"] = "Loading image..."
+            job["progress"] = 5
 
-        # Load image
-        image, _, f_px = io.load_rgb(image_path)
-        height, width = image.shape[:2]
+            # Load image
+            image, _, f_px = io.load_rgb(image_path)
+            height, width = image.shape[:2]
 
-        # Lazily optimize the model on the first job (one-time cost).
-        if ENABLE_COMPILE and not _compiled:
-            update_progress(15, "Optimizing model (first run)...")
-            maybe_compile()
+            # Lazily optimize the model on the first job (one-time cost).
+            if ENABLE_COMPILE and not _compiled:
+                update_progress(15, "Optimizing model (first run)...")
+                maybe_compile()
 
-        if ENABLE_PROFILE:
-            _reset_profile()
+            if ENABLE_PROFILE:
+                _reset_profile()
 
-        # Run prediction
-        gaussians = predict_image(predictor, image, f_px, torch.device(device), update_progress)
+            # Run prediction
+            gaussians = predict_image(predictor, image, f_px, torch.device(device), update_progress)
 
-        if ENABLE_PROFILE:
-            _log_profile(job_id)
+            if ENABLE_PROFILE:
+                _log_profile(job_id)
 
-        # Save PLY
-        ply_path = output_dir / "output.ply"
-        save_ply(gaussians, f_px, (height, width), ply_path)
+            # Save PLY
+            ply_path = output_dir / "output.ply"
+            save_ply(gaussians, f_px, (height, width), ply_path)
 
-        # Prepare metadata for viewer
-        job["result"] = {
-            "ply_url": f"/result/{job_id}/output.ply",
-            "meta": {
-                "focal_length_px": f_px,
-                "width": width,
-                "height": height,
-                "num_gaussians": gaussians.mean_vectors.shape[1],
-            },
-        }
-        job["progress"] = 100
-        job["status"] = "Complete"
-        job["done"] = True
+            # Prepare metadata for viewer
+            job["result"] = {
+                "ply_url": f"/result/{job_id}/output.ply",
+                "meta": {
+                    "focal_length_px": f_px,
+                    "width": width,
+                    "height": height,
+                    "num_gaussians": gaussians.mean_vectors.shape[1],
+                },
+            }
+            job["progress"] = 100
+            job["status"] = "Complete"
+            job["done"] = True
 
-    except Exception as e:
-        LOGGER.exception("Job %s failed", job_id)
-        job["progress"] = 100
-        job["status"] = f"Error: {e}"
-        job["error"] = str(e)
-        job["done"] = True
+        except Exception as e:
+            LOGGER.exception("Job %s failed", job_id)
+            (output_dir / "output.ply").unlink(missing_ok=True)
+            job["progress"] = 100
+            job["status"] = f"Error: {e}"
+            job["error"] = str(e)
+            job["done"] = True
 
 
 # ─── API Endpoints ────────────────────────────────────────────────────────────
@@ -343,6 +360,8 @@ def predict(file: UploadFile = File(...)) -> JSONResponse:
     ext = Path(file.filename).suffix.lower()
     if ext not in allowed_ext:
         raise HTTPException(400, f"Unsupported file type: {ext}")
+    if (file.size or 0) > MAX_UPLOAD_BYTES:
+        raise HTTPException(413, "File too large (max 50 MB)")
 
     # shortcut: single-user local app; drop only completed jobs to avoid deleting in-progress ones
     for jid in list(jobs.keys()):
@@ -364,8 +383,11 @@ def predict(file: UploadFile = File(...)) -> JSONResponse:
 
     # Save uploaded file
     input_path = job_dir / f"input{ext}"
-    with input_path.open("wb") as f:
-        shutil.copyfileobj(file.file, f)
+    try:
+        _save_limited(file.file, input_path)
+    except HTTPException:
+        shutil.rmtree(job_dir, ignore_errors=True)
+        raise
 
     # Initialize job state
     jobs[job_id] = {
@@ -433,9 +455,15 @@ async def health() -> JSONResponse:
 @app.on_event("startup")
 async def startup_event() -> None:
     """Load model on startup."""
-    # shortcut: single-user local app; drop stale job dirs (old results are transient)
+    # shortcut: single-user local app; drop only old job dirs so a second
+    # instance sharing this folder never deletes an in-flight job
+    cutoff = time.time() - 3600
     for stale in JOBS_DIR.iterdir():
-        shutil.rmtree(stale, ignore_errors=True)
+        try:
+            if stale.is_dir() and stale.stat().st_mtime < cutoff:
+                shutil.rmtree(stale, ignore_errors=True)
+        except OSError:
+            pass
     load_model()
 
 

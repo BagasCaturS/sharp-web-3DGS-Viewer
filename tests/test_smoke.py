@@ -61,8 +61,32 @@ def test_focal_fallback() -> None:
     assert abs(f_px - io.convert_focallength(64, 48, 30.0)) < 1e-4
 
 
+def test_upload_limit() -> None:
+    import importlib.util
+    import io as _io
+
+    spec = importlib.util.spec_from_file_location(
+        "sharp_web_server", Path(__file__).resolve().parents[1] / "web" / "server.py"
+    )
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+
+    with tempfile.TemporaryDirectory() as tmp:
+        dest = Path(tmp) / "in.bin"
+        mod._save_limited(_io.BytesIO(b"12345"), dest)
+        assert dest.read_bytes() == b"12345"
+        try:
+            mod._save_limited(_io.BytesIO(b"0123456789"), dest, limit=5)
+        except Exception as exc:
+            assert "too large" in str(exc).lower()
+        else:
+            raise AssertionError("oversize upload was accepted")
+        assert not dest.exists(), "partial upload left on disk"
+
+
 if __name__ == "__main__":
     test_ply_roundtrip()
     test_covariance_roundtrip()
     test_focal_fallback()
+    test_upload_limit()
     print("all smoke tests passed")
