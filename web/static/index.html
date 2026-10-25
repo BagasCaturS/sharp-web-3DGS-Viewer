@@ -1,0 +1,684 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SHARP - Image to 3D Gaussians</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            background: #1a1a2e;
+            color: #eee;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        header {
+            background: #16213e;
+            padding: 1rem 2rem;
+            border-bottom: 1px solid #0f3460;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        header h1 {
+            font-size: 1.5rem;
+            font-weight: 600;
+            background: linear-gradient(90deg, #e94560, #e91e63);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .device-badge {
+            background: #0f3460;
+            padding: 0.25rem 0.75rem;
+            border-radius: 999px;
+            font-size: 0.75rem;
+            color: #aaa;
+        }
+
+        main {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            padding: 2rem;
+            gap: 1.5rem;
+            max-width: 1200px;
+            margin: 0 auto;
+            width: 100%;
+        }
+
+        /* Upload Zone */
+        .upload-section {
+            background: #16213e;
+            border: 2px dashed #0f3460;
+            border-radius: 12px;
+            padding: 3rem;
+            text-align: center;
+            transition: all 0.3s ease;
+            position: relative;
+        }
+
+        .upload-section:hover,
+        .upload-section.dragover {
+            border-color: #e94560;
+            background: #1f2a4a;
+        }
+
+        .upload-section.dragover {
+            transform: scale(1.01);
+        }
+
+        .upload-icon {
+            width: 64px;
+            height: 64px;
+            margin-bottom: 1rem;
+            opacity: 0.7;
+        }
+
+        .upload-title {
+            font-size: 1.25rem;
+            font-weight: 500;
+            margin-bottom: 0.5rem;
+        }
+
+        .upload-subtitle {
+            color: #888;
+            font-size: 0.9rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.75rem 1.5rem;
+            border: none;
+            border-radius: 8px;
+            font-size: 1rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .btn-primary {
+            background: linear-gradient(90deg, #e94560, #e91e63);
+            color: white;
+        }
+
+        .btn-primary:hover:not(:disabled) {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(233, 69, 96, 0.4);
+        }
+
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .btn-secondary {
+            background: #0f3460;
+            color: #aaa;
+        }
+
+        .btn-secondary:hover {
+            color: #eee;
+        }
+
+        .btn-secondary.active {
+            background: #e94560;
+            color: #fff;
+        }
+
+        .file-input {
+            display: none;
+        }
+
+        /* Progress Section */
+        .progress-section {
+            background: #16213e;
+            border-radius: 12px;
+            padding: 1.5rem;
+            display: none;
+        }
+
+        .progress-section.visible {
+            display: block;
+            animation: slideIn 0.3s ease;
+        }
+
+        @keyframes slideIn {
+            from { opacity: 0; transform: translateY(-10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .progress-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1rem;
+        }
+
+        .progress-title {
+            font-weight: 500;
+        }
+
+        .progress-pct {
+            font-variant-numeric: tabular-nums;
+            color: #e94560;
+            font-weight: 600;
+        }
+
+        .progress-bar {
+            height: 8px;
+            background: #0f3460;
+            border-radius: 4px;
+            overflow: hidden;
+            margin-bottom: 0.75rem;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #e94560, #e91e63);
+            border-radius: 4px;
+            width: 0%;
+            transition: width 0.3s ease;
+        }
+
+        .progress-status {
+            font-size: 0.875rem;
+            color: #888;
+            min-height: 1.25rem;
+        }
+
+        .progress-steps {
+            display: flex;
+            gap: 1rem;
+            margin-top: 1rem;
+            padding-top: 1rem;
+            border-top: 1px solid #0f3460;
+        }
+
+        .step {
+            flex: 1;
+            text-align: center;
+            padding: 0.5rem;
+            border-radius: 6px;
+            background: #0f3460;
+            transition: all 0.3s ease;
+        }
+
+        .step.active {
+            background: rgba(233, 69, 96, 0.2);
+            border: 1px solid #e94560;
+        }
+
+        .step.complete {
+            background: rgba(46, 204, 113, 0.2);
+            border: 1px solid #2ecc71;
+        }
+
+        .step-icon {
+            width: 20px;
+            height: 20px;
+            margin: 0 auto 0.25rem;
+        }
+
+        .step-label {
+            font-size: 0.75rem;
+            color: #aaa;
+        }
+
+        .step.active .step-label,
+        .step.complete .step-label {
+            color: #eee;
+        }
+
+        /* Viewer Section */
+        .viewer-section {
+            background: #16213e;
+            border-radius: 12px;
+            overflow: hidden;
+            display: none;
+            flex: 1;
+            min-height: 500px;
+        }
+
+        .viewer-section.visible {
+            display: flex;
+            flex-direction: column;
+            animation: slideIn 0.3s ease;
+        }
+
+        .viewer-header {
+            background: #0f3460;
+            padding: 1rem 1.5rem;
+            border-bottom: 1px solid #1a1a2e;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .viewer-title {
+            font-weight: 500;
+        }
+
+        .viewer-actions {
+            display: flex;
+            gap: 0.5rem;
+        }
+
+        .viewer-canvas-wrap {
+            position: relative;
+            flex: 1;
+            min-height: 500px;
+            display: flex;
+        }
+
+        #viewer-canvas {
+            width: 100%;
+            height: 100%;
+            display: block;
+            background: #1a1a2e;
+        }
+
+        /* Viewer Toolbar */
+        .viewer-toolbar {
+            position: absolute;
+            top: 0.75rem;
+            left: 0.75rem;
+            right: 0.75rem;
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 0.4rem 1rem;
+            padding: 0.5rem 0.75rem;
+            border-radius: 10px;
+            background: rgba(15, 52, 96, 0.82);
+            backdrop-filter: blur(6px);
+            border: 1px solid rgba(233, 69, 96, 0.25);
+            font-size: 0.75rem;
+            color: #aaa;
+        }
+
+        .toolbar-group {
+            display: flex;
+            align-items: center;
+            gap: 0.35rem;
+        }
+
+        .toolbar-label {
+            color: #7f8ea3;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            font-size: 0.65rem;
+            white-space: nowrap;
+        }
+
+        .toolbar-val {
+            color: #eee;
+            font-variant-numeric: tabular-nums;
+            min-width: 2.6em;
+            display: inline-block;
+        }
+
+        .tool-btn {
+            background: #0f3460;
+            color: #cfd8e3;
+            border: 1px solid #1a3a63;
+            border-radius: 6px;
+            padding: 0.3rem 0.55rem;
+            font-size: 0.75rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.15s ease;
+        }
+
+        .tool-btn:hover:not(:disabled) {
+            border-color: #e94560;
+            color: #fff;
+        }
+
+        .tool-btn.active {
+            background: rgba(233, 69, 96, 0.25);
+            border-color: #e94560;
+            color: #fff;
+        }
+
+        .tool-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .viewer-toolbar input[type="range"] {
+            width: 96px;
+            accent-color: #e94560;
+            cursor: pointer;
+        }
+
+        .record-indicator {
+            position: absolute;
+            bottom: 0.75rem;
+            left: 0.75rem;
+            display: none;
+            background: rgba(233, 69, 96, 0.9);
+            color: #fff;
+            padding: 0.3rem 0.6rem;
+            border-radius: 6px;
+            font-size: 0.75rem;
+            font-weight: 600;
+        }
+
+        .record-indicator.visible {
+            display: block;
+            animation: blink 1s infinite;
+        }
+
+        @keyframes blink {
+            50% { opacity: 0.45; }
+        }
+
+        .viewer-stats {
+            padding: 0.75rem 1.5rem;
+            background: #0f3460;
+            border-top: 1px solid #1a1a2e;
+            display: flex;
+            gap: 2rem;
+            font-size: 0.875rem;
+            color: #888;
+        }
+
+        .stat {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .stat-value {
+            color: #eee;
+            font-weight: 500;
+        }
+
+        .shortcuts-hint {
+            margin-left: auto;
+        }
+
+        /* Error State */
+        .error-state {
+            background: rgba(233, 69, 96, 0.1);
+            border: 1px solid #e94560;
+            border-radius: 8px;
+            padding: 1rem;
+            color: #e94560;
+            display: none;
+        }
+
+        .error-state.visible {
+            display: block;
+        }
+
+        /* ── Hide UI (pure canvas) ─────────────────────────────────── */
+        body.ui-hidden > header { display: none; }
+        body.ui-hidden main {
+            padding: 0;
+            max-width: none;
+            gap: 0;
+        }
+        body.ui-hidden .viewer-header,
+        body.ui-hidden .viewer-toolbar,
+        body.ui-hidden .viewer-stats,
+        body.ui-hidden .record-indicator { display: none; }
+        body.ui-hidden .viewer-section {
+            border-radius: 0;
+            min-height: 100vh;
+        }
+        body.ui-hidden .viewer-canvas-wrap { min-height: 100vh; }
+
+        /* ── Floating restore button (visible only when UI hidden) ── */
+        .ui-restore {
+            position: fixed;
+            right: 1rem;
+            bottom: 1rem;
+            z-index: 60;
+            display: none;
+            align-items: center;
+            gap: 0.4rem;
+            padding: 0.5rem 0.9rem;
+            background: rgba(22, 33, 62, 0.85);
+            border: 1px solid #0f3460;
+            border-radius: 999px;
+            color: #aaa;
+            font: inherit;
+            font-size: 0.85rem;
+            cursor: pointer;
+            backdrop-filter: blur(6px);
+            transition: color 0.15s, background 0.15s;
+        }
+        .ui-restore:hover { color: #fff; background: rgba(15, 52, 96, 0.95); }
+        body.ui-hidden .ui-restore { display: inline-flex; }
+
+        /* ── Fullscreen: pure canvas, no overlays ──────────────────── */
+        .viewer-canvas-wrap:fullscreen,
+        .viewer-canvas-wrap:-webkit-full-screen {
+            width: 100vw;
+            height: 100vh;
+            min-height: 100vh;
+            border-radius: 0;
+            background: transparent;
+        }
+        .viewer-canvas-wrap:fullscreen .viewer-toolbar,
+        .viewer-canvas-wrap:fullscreen .record-indicator,
+        .viewer-canvas-wrap:-webkit-full-screen .viewer-toolbar,
+        .viewer-canvas-wrap:-webkit-full-screen .record-indicator {
+            display: none;
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            main { padding: 1rem; }
+            header { padding: 1rem; }
+            .upload-section { padding: 2rem 1rem; }
+            .progress-steps { flex-wrap: wrap; }
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>SHARP</h1>
+        <span class="device-badge" id="device-badge">Loading...</span>
+    </header>
+
+    <main>
+        <!-- Upload Zone -->
+        <section class="upload-section" id="upload-zone">
+            <svg class="upload-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                <polyline points="17 8 12 3 7 8"/>
+                <line x1="12" y1="3" x2="12" y2="15"/>
+            </svg>
+            <div class="upload-title">Drag & Drop an Image</div>
+            <div class="upload-subtitle">or click to browse • JPG, PNG, WebP, HEIC</div>
+            <button class="btn btn-primary" id="browse-btn">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+                </svg>
+                Browse Files
+            </button>
+            <input type="file" class="file-input" id="file-input" accept="image/*">
+        </section>
+
+        <!-- Load PLY Section -->
+        <section class="upload-section" id="ply-zone" style="border-color: #2ecc71;">
+            <svg class="upload-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="color: #2ecc71;">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                <polyline points="17 8 12 3 7 8"/>
+                <line x1="12" y1="3" x2="12" y2="15"/>
+            </svg>
+            <div class="upload-title" style="color: #2ecc71;">Load Existing PLY File</div>
+            <div class="upload-subtitle">Skip inference • Drag & drop a .ply file</div>
+            <button class="btn" id="browse-ply-btn" style="background: linear-gradient(90deg, #2ecc71, #27ae60); color: white;">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+                </svg>
+                Load PLY
+            </button>
+            <input type="file" class="file-input" id="ply-input" accept=".ply">
+        </section>
+
+        <!-- Progress Section -->
+        <section class="progress-section" id="progress-section">
+            <div class="progress-header">
+                <span class="progress-title">Processing</span>
+                <span class="progress-pct" id="progress-pct">0%</span>
+            </div>
+            <div class="progress-bar">
+                <div class="progress-fill" id="progress-fill"></div>
+            </div>
+            <div class="progress-status" id="progress-status">Initializing...</div>
+            <div class="progress-steps">
+                <div class="step" id="step-preprocess">
+                    <svg class="step-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <rect x="2" y="3" width="20" height="14" rx="2"/>
+                        <path d="M8 21h8M12 17v4"/>
+                    </svg>
+                    <div class="step-label">Preprocess</div>
+                </div>
+                <div class="step" id="step-inference">
+                    <svg class="step-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <rect x="2" y="3" width="20" height="14" rx="2"/>
+                        <path d="M8 21h8M12 17v4"/>
+                        <circle cx="12" cy="10" r="3"/>
+                    </svg>
+                    <div class="step-label">Inference</div>
+                </div>
+                <div class="step" id="step-postprocess">
+                    <svg class="step-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+                    </svg>
+                    <div class="step-label">Postprocess</div>
+                </div>
+                <div class="step" id="step-save">
+                    <svg class="step-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                        <polyline points="17 8 12 3 7 8"/>
+                        <line x1="12" y1="3" x2="12" y2="15"/>
+                    </svg>
+                    <div class="step-label">Save</div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Error State -->
+        <div class="error-state" id="error-state"></div>
+
+        <!-- 3D Viewer Section -->
+        <section class="viewer-section" id="viewer-section">
+            <div class="viewer-header">
+                <span class="viewer-title">3D Gaussian Splats</span>
+                <div class="viewer-actions">
+                    <button class="btn btn-secondary" id="download-btn">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                            <polyline points="7 10 12 15 17 10"/>
+                            <line x1="12" y1="15" x2="12" y2="3"/>
+                        </svg>
+                        Download PLY
+                    </button>
+                    <button class="btn btn-secondary" id="reset-view-btn">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polyline points="1 4 1 10 7 10"/>
+                            <polyline points="23 20 23 14 17 14"/>
+                            <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+                        </svg>
+                        Reset View
+                    </button>
+                    <button class="btn btn-secondary" id="toggle-ui-btn" aria-pressed="false" title="Hide interface (H)">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/>
+                            <line x1="1" y1="1" x2="23" y2="23"/>
+                        </svg>
+                        Hide UI
+                    </button>
+                    <button class="btn btn-secondary" id="fullscreen-btn" title="Fullscreen">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/>
+                        </svg>
+                        Fullscreen
+                    </button>
+                </div>
+            </div>
+            <div class="viewer-canvas-wrap">
+                <canvas id="viewer-canvas"></canvas>
+                <div class="viewer-toolbar" id="viewer-toolbar">
+                    <div class="toolbar-group">
+                        <span class="toolbar-label">Camera</span>
+                        <button class="tool-btn" data-preset="front">Front</button>
+                        <button class="tool-btn" data-preset="back">Back</button>
+                        <button class="tool-btn" data-preset="left">Left</button>
+                        <button class="tool-btn" data-preset="right">Right</button>
+                        <button class="tool-btn" data-preset="top">Top</button>
+                        <button class="tool-btn" data-preset="bottom">Bottom</button>
+                        <button class="tool-btn" data-preset="flyin">Fly-in</button>
+                    </div>
+                    <div class="toolbar-group">
+                        <span class="toolbar-label">View</span>
+                        <button class="tool-btn" id="toggle-points" title="Point cloud mode (P)">Points</button>
+                        <button class="tool-btn" id="toggle-gizmo" title="Show orientation axes">Gizmo</button>
+                        <button class="tool-btn" id="toggle-grid" title="Show ground grid">Grid</button>
+                        <button class="tool-btn" id="toggle-bg" title="Cycle background">Background</button>
+                    </div>
+                    <div class="toolbar-group">
+                        <span class="toolbar-label">Splat scale</span>
+                        <input type="range" id="splat-scale" min="0" max="3" step="0.05" value="1">
+                        <span class="toolbar-val" id="splat-scale-val">1.00</span>
+                    </div>
+                    <div class="toolbar-group">
+                        <span class="toolbar-label">Focal</span>
+                        <input type="range" id="focal-adjust" min="0.2" max="3" step="0.02" value="1">
+                        <span class="toolbar-val" id="focal-adjust-val">1.00</span>
+                    </div>
+                    <div class="toolbar-group">
+                        <button class="tool-btn" id="screenshot-btn" title="Save current view as PNG">Screenshot</button>
+                        <button class="tool-btn" id="record-btn" title="Record an 8s orbit as WebM">Record orbit</button>
+                    </div>
+                </div>
+                <div class="record-indicator" id="record-indicator">● Recording…</div>
+            </div>
+            <div class="viewer-stats">
+                <div class="stat"><span>Gaussians:</span><span class="stat-value" id="stat-gaussians">-</span></div>
+                <div class="stat"><span>Resolution:</span><span class="stat-value" id="stat-res">-</span></div>
+                <div class="stat"><span>Focal Length:</span><span class="stat-value" id="stat-focal">-</span></div>
+                <div class="stat shortcuts-hint"><span>Shortcuts:</span><span class="stat-value">H hide UI · = / − scale · P points · F / G focal</span></div>
+            </div>
+        </section>
+    </main>
+
+    <button class="ui-restore" id="ui-restore-btn" title="Show interface (H)">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+            <circle cx="12" cy="12" r="3"/>
+        </svg>
+        Show UI
+    </button>
+
+    <!-- Three.js & PLYLoader -->
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://unpkg.com/three@0.165.0/build/three.module.js",
+            "three/addons/": "https://unpkg.com/three@0.165.0/examples/jsm/",
+            "@mkkellogg/gaussian-splats-3d": "https://unpkg.com/@mkkellogg/gaussian-splats-3d@0.4.7/build/gaussian-splats-3d.module.js"
+        }
+    }
+    </script>
+    <script type="module" src="/static/app.js"></script>
+</body>
+</html>
